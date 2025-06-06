@@ -4,8 +4,7 @@ pragma solidity ^0.8.19;
 import {TimersUpgradeable} from "@openzeppelin/contracts-upgradeable-v4/utils/TimersUpgradeable.sol";
 import {SafeCastUpgradeable} from "@openzeppelin/contracts-upgradeable-v4/utils/math/SafeCastUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable-v4/proxy/utils/Initializable.sol";
-import {TimelockControllerUpgradeable} from
-    "@openzeppelin/contracts-upgradeable-v4/governance/TimelockControllerUpgradeable.sol";
+import {TimelockControllerUpgradeable} from "@openzeppelin/contracts-upgradeable-v4/governance/TimelockControllerUpgradeable.sol";
 import {AddressUpgradeable} from "@openzeppelin/contracts-upgradeable-v4/utils/AddressUpgradeable.sol";
 import {GovernorCountingSimpleUpgradeableV2} from "src/lib/openzeppelin/v2/GovernorCountingSimpleUpgradeableV2.sol";
 import {IGovernorUpgradeable} from "src/lib/openzeppelin/v2/GovernorUpgradeableV2.sol";
@@ -39,6 +38,8 @@ contract AgoraGovernor is
         bytes[] calldatas,
         uint256 startBlock,
         uint256 endBlock,
+        uint256 startTimestamp,
+        uint256 endTimestamp,
         string description,
         uint8 proposalTypeId
     );
@@ -49,12 +50,15 @@ contract AgoraGovernor is
         bytes proposalData,
         uint256 startBlock,
         uint256 endBlock,
+        uint256 startTimestamp,
+        uint256 endTImestamp,
         string description,
         uint8 proposalTypeId
     );
     event ProposalTypeUpdated(uint256 indexed proposalId, uint8 proposalTypeId);
     event ProposalDeadlineUpdated(uint256 proposalId, uint64 deadline);
     event AdminSet(address indexed oldAdmin, address indexed newAdmin);
+    event ProposalDeadlineTimestampUpdated(uint256 proposalId, uint64 deadlineTimestamp);
     event ManagerSet(address indexed oldManager, address indexed newManager);
 
     enum SupplyType {
@@ -81,6 +85,7 @@ contract AgoraGovernor is
 
     using SafeCastUpgradeable for uint256;
     using TimersUpgradeable for TimersUpgradeable.BlockNumber;
+    using TimersUpgradeable for TimersUpgradeable.Timestamp;
 
     /*//////////////////////////////////////////////////////////////
                            IMMUTABLE STORAGE
@@ -178,13 +183,9 @@ contract AgoraGovernor is
     /**
      * @dev Updated version in which quorum is based on `proposalId` instead of snapshot block.
      */
-    function _quorumReached(uint256 proposalId)
-        internal
-        view
-        virtual
-        override(GovernorCountingSimpleUpgradeableV2, GovernorUpgradeableV2)
-        returns (bool)
-    {
+    function _quorumReached(
+        uint256 proposalId
+    ) internal view virtual override(GovernorCountingSimpleUpgradeableV2, GovernorUpgradeableV2) returns (bool) {
         (uint256 againstVotes, uint256 forVotes, uint256 abstainVotes) = proposalVotes(proposalId);
 
         return quorum(proposalId) <= againstVotes + forVotes + abstainVotes;
@@ -193,7 +194,9 @@ contract AgoraGovernor is
     /**
      * @dev Added logic based on approval voting threshold to determine if vote has succeeded.
      */
-    function _voteSucceeded(uint256 proposalId)
+    function _voteSucceeded(
+        uint256 proposalId
+    )
         internal
         view
         virtual
@@ -260,12 +263,11 @@ contract AgoraGovernor is
      * @param descriptionHash The hash of the proposal description.
      * @return The id of the proposal.
      */
-    function hashProposalWithModule(address module, bytes memory proposalData, bytes32 descriptionHash)
-        public
-        view
-        virtual
-        returns (uint256)
-    {
+    function hashProposalWithModule(
+        address module,
+        bytes memory proposalData,
+        bytes32 descriptionHash
+    ) public view virtual returns (uint256) {
         return uint256(keccak256(abi.encode(address(this), module, proposalData, descriptionHash)));
     }
 
@@ -293,7 +295,9 @@ contract AgoraGovernor is
     /**
      * @inheritdoc GovernorTimelockControlUpgradeableV2
      */
-    function state(uint256 proposalId)
+    function state(
+        uint256 proposalId
+    )
         public
         view
         virtual
@@ -306,13 +310,9 @@ contract AgoraGovernor is
     /**
      * @inheritdoc GovernorTimelockControlUpgradeableV2
      */
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        virtual
-        override(GovernorUpgradeableV2, GovernorTimelockControlUpgradeableV2)
-        returns (bool)
-    {
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view virtual override(GovernorUpgradeableV2, GovernorTimelockControlUpgradeableV2) returns (bool) {
         return GovernorTimelockControlUpgradeableV2.supportsInterface(interfaceId);
     }
 
@@ -335,8 +335,18 @@ contract AgoraGovernor is
      * @param deadline The new deadline for the proposal.
      */
     function setProposalDeadline(uint256 proposalId, uint64 deadline) external onlyAdminOrTimelock {
-        _proposals[proposalId].voteEnd.setDeadline(deadline);
+        _proposals[proposalId].voteEndBlock.setDeadline(deadline);
         emit ProposalDeadlineUpdated(proposalId, deadline);
+    }
+
+    /**
+     * @notice Set the deadline for a proposal. Only the admin or timelock can call this function.
+     * @param proposalId The id of the proposal.
+     * @param deadlineTimestamp The new deadline in seconds for the proposal.
+     */
+    function setProposalDeadlineTimestamp(uint256 proposalId, uint64 deadlineTimestamp) external onlyAdminOrTimelock {
+        _proposals[proposalId].voteEndTimestamp.setDeadline(deadlineTimestamp);
+        emit ProposalDeadlineTimestampUpdated(proposalId, deadlineTimestamp);
     }
 
     /**
@@ -351,6 +361,20 @@ contract AgoraGovernor is
      */
     function setVotingPeriod(uint256 newVotingPeriod) public override onlyAdminOrTimelock {
         _setVotingPeriod(newVotingPeriod);
+    }
+
+    /**
+     * @inheritdoc GovernorSettingsUpgradeableV2
+     */
+    function setVotingDelayInSeconds(uint256 newVotingDelay) public override onlyAdminOrTimelock {
+        _setVotingDelayInSeconds(newVotingDelay);
+    }
+
+    /**
+     * @inheritdoc GovernorSettingsUpgradeableV2
+     */
+    function setVotingPeriodInSeconds(uint256 newVotingPeriod) public override onlyAdminOrTimelock {
+        _setVotingPeriodInSeconds(newVotingPeriod);
     }
 
     /**
@@ -382,15 +406,16 @@ contract AgoraGovernor is
      * @dev Updated internal vote casting mechanism which delegates counting logic to voting module,
      * in addition to executing standard `_countVote`. See {IGovernor-_castVote}.
      */
-    function _castVote(uint256 proposalId, address account, uint8 support, string memory reason, bytes memory params)
-        internal
-        virtual
-        override
-        returns (uint256 weight)
-    {
+    function _castVote(
+        uint256 proposalId,
+        address account,
+        uint8 support,
+        string memory reason,
+        bytes memory params
+    ) internal virtual override returns (uint256 weight) {
         require(state(proposalId) == ProposalState.Active, "Governor: vote not currently active");
 
-        weight = _getVotes(account, _proposals[proposalId].voteStart.getDeadline(), "");
+        weight = _getVotes(account, _proposals[proposalId].voteStartBlock.getDeadline(), "");
 
         _countVote(proposalId, account, support, weight, params);
 
@@ -410,13 +435,11 @@ contract AgoraGovernor is
     /**
      * @inheritdoc GovernorUpgradeableV2
      */
-    function relay(address target, uint256 value, bytes calldata data)
-        external
-        payable
-        virtual
-        override(GovernorUpgradeableV2)
-        onlyGovernance
-    {
+    function relay(
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) external payable virtual override(GovernorUpgradeableV2) onlyGovernance {
         if (approvedModules[target]) revert InvalidRelayTarget(target);
         (bool success, bytes memory returndata) = target.call{value: value}(data);
         AddressUpgradeable.verifyCallResult(success, returndata, "Governor: relay reverted without message");
@@ -458,8 +481,8 @@ contract AgoraGovernor is
 
         // Revert if `proposalType` is unset or requires module
         if (
-            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0
-                || PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != address(0)
+            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0 ||
+            PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != address(0)
         ) {
             revert InvalidProposalType(proposalTypeId);
         }
@@ -469,25 +492,39 @@ contract AgoraGovernor is
         proposalId = hashProposal(targets, values, calldatas, keccak256(bytes(description)));
 
         ProposalCore storage proposal = _proposals[proposalId];
-        if (!proposal.voteStart.isUnset()) revert InvalidProposalExists();
+        if (!proposal.voteStartBlock.isUnset()) revert InvalidProposalExists();
 
-        uint64 snapshot = block.number.toUint64() + votingDelay().toUint64();
-        uint64 deadline = snapshot + votingPeriod().toUint64();
+        // avoid stack too deep
+        {
+            uint64 snapshot = block.number.toUint64() + votingDelay().toUint64();
+            uint64 deadline = snapshot + votingPeriod().toUint64();
+            uint64 voteStartTimestamp;
+            uint64 voteEndTimestamp;
+            // if `votingPeriodInSeconds` is set, we also use timestamp to check
+            if (votingPeriodInSeconds() != 0) {
+                voteStartTimestamp = block.timestamp.toUint64() + votingDelayInSeconds().toUint64();
+                voteEndTimestamp = voteStartTimestamp + votingPeriodInSeconds().toUint64();
+            }
 
-        proposal.voteStart.setDeadline(snapshot);
-        proposal.voteEnd.setDeadline(deadline);
-        proposal.proposalType = proposalTypeId;
-        proposal.proposer = proposer;
+            proposal.voteStartBlock.setDeadline(snapshot);
+            proposal.voteEndBlock.setDeadline(deadline);
+            proposal.proposalType = proposalTypeId;
+            proposal.proposer = proposer;
+            proposal.voteStartTimestamp.setDeadline(voteStartTimestamp);
+            proposal.voteEndTimestamp.setDeadline(voteEndTimestamp);
+        }
 
         emit ProposalCreated(
             proposalId,
-            _msgSender(),
+            proposer,
             targets,
             values,
             new string[](targets.length),
             calldatas,
-            snapshot,
-            deadline,
+            proposal.voteStartBlock.getDeadline(),
+            proposal.voteEndBlock.getDeadline(),
+            proposal.voteStartTimestamp.getDeadline(),
+            proposal.voteEndTimestamp.getDeadline(),
             description,
             proposalTypeId
         );
@@ -501,11 +538,11 @@ contract AgoraGovernor is
      * @param description The description of the proposal.
      * @return The id of the proposal.
      */
-    function proposeWithModule(VotingModule module, bytes memory proposalData, string memory description)
-        public
-        virtual
-        returns (uint256)
-    {
+    function proposeWithModule(
+        VotingModule module,
+        bytes memory proposalData,
+        string memory description
+    ) public virtual returns (uint256) {
         return proposeWithModule(module, proposalData, description, 0);
     }
 
@@ -534,8 +571,8 @@ contract AgoraGovernor is
 
         // Revert if `proposalTypeId` is unset or doesn't match module
         if (
-            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0
-                || PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != address(module)
+            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0 ||
+            PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != address(module)
         ) {
             revert InvalidProposalType(proposalTypeId);
         }
@@ -545,21 +582,42 @@ contract AgoraGovernor is
         proposalId = hashProposalWithModule(address(module), proposalData, descriptionHash);
 
         ProposalCore storage proposal = _proposals[proposalId];
-        if (!proposal.voteStart.isUnset()) revert InvalidProposalExists();
+        if (!proposal.voteStartBlock.isUnset()) revert InvalidProposalExists();
 
-        uint64 snapshot = block.number.toUint64() + votingDelay().toUint64();
-        uint64 deadline = snapshot + votingPeriod().toUint64();
+        // avoid stack too deep
+        {
+            uint64 snapshot = block.number.toUint64() + votingDelay().toUint64();
+            uint64 deadline = snapshot + votingPeriod().toUint64();
+            uint64 voteStartTimestamp;
+            uint64 voteEndTimestamp;
+            // if `votingPeriodInSeconds` is set, we also use timestamp to check
+            if (votingPeriodInSeconds() != 0) {
+                voteStartTimestamp = block.timestamp.toUint64() + votingDelayInSeconds().toUint64();
+                voteEndTimestamp = voteStartTimestamp + votingPeriodInSeconds().toUint64();
+            }
 
-        proposal.voteStart.setDeadline(snapshot);
-        proposal.voteEnd.setDeadline(deadline);
-        proposal.votingModule = address(module);
-        proposal.proposalType = proposalTypeId;
-        proposal.proposer = proposer;
+            proposal.voteStartBlock.setDeadline(snapshot);
+            proposal.voteEndBlock.setDeadline(deadline);
+            proposal.votingModule = address(module);
+            proposal.proposalType = proposalTypeId;
+            proposal.proposer = proposer;
+            proposal.voteStartTimestamp.setDeadline(voteStartTimestamp);
+            proposal.voteEndTimestamp.setDeadline(voteEndTimestamp);
+        }
 
         module.propose(proposalId, proposalData, descriptionHash);
 
         emit ProposalCreated(
-            proposalId, proposer, address(module), proposalData, snapshot, deadline, description, proposalTypeId
+            proposalId,
+            proposer,
+            address(module),
+            proposalData,
+            proposal.voteStartBlock.getDeadline(),
+            proposal.voteEndBlock.getDeadline(),
+            proposal.voteStartTimestamp.getDeadline(),
+            proposal.voteEndTimestamp.getDeadline(),
+            description,
+            proposalTypeId
         );
     }
 
@@ -573,8 +631,8 @@ contract AgoraGovernor is
 
         // Revert if `proposalTypeId` is unset or the proposal has a different voting module
         if (
-            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0
-                || PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != _proposals[proposalId].votingModule
+            bytes(PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).name).length == 0 ||
+            PROPOSAL_TYPES_CONFIGURATOR.proposalTypes(proposalTypeId).module != _proposals[proposalId].votingModule
         ) {
             revert InvalidProposalType(proposalTypeId);
         }
@@ -620,11 +678,11 @@ contract AgoraGovernor is
      * @param descriptionHash The hash of the proposal description.
      * @return The id of the proposal.
      */
-    function cancelWithModule(VotingModule module, bytes memory proposalData, bytes32 descriptionHash)
-        public
-        virtual
-        returns (uint256)
-    {
+    function cancelWithModule(
+        VotingModule module,
+        bytes memory proposalData,
+        bytes32 descriptionHash
+    ) public virtual returns (uint256) {
         uint256 proposalId = hashProposalWithModule(address(module), proposalData, descriptionHash);
         address sender = _msgSender();
         require(
@@ -655,25 +713,29 @@ contract AgoraGovernor is
     /**
      * @inheritdoc GovernorTimelockControlUpgradeableV2
      */
-    function queue(address[] memory targets, uint256[] memory values, bytes[] memory calldatas, bytes32 descriptionHash)
-        public
-        override
-        returns (uint256)
-    {
+    function queue(
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory calldatas,
+        bytes32 descriptionHash
+    ) public override returns (uint256) {
         return super.queue(targets, values, calldatas, descriptionHash);
     }
 
     /**
      * @notice Queue a proposal with a custom voting module. See {GovernorTimelockControlUpgradeableV2-queue}.
      */
-    function queueWithModule(VotingModule module, bytes memory proposalData, bytes32 descriptionHash)
-        public
-        returns (uint256)
-    {
+    function queueWithModule(
+        VotingModule module,
+        bytes memory proposalData,
+        bytes32 descriptionHash
+    ) public returns (uint256) {
         uint256 proposalId = hashProposalWithModule(address(module), proposalData, descriptionHash);
 
-        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) =
-            module._formatExecuteParams(proposalId, proposalData);
+        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) = module._formatExecuteParams(
+            proposalId,
+            proposalData
+        );
 
         require(state(proposalId) == ProposalState.Succeeded, "Governor: proposal not successful");
 
@@ -727,12 +789,11 @@ contract AgoraGovernor is
      * @param proposalData The proposal data to pass to the voting module.
      * @param descriptionHash The hash of the proposal description.
      */
-    function executeWithModule(VotingModule module, bytes memory proposalData, bytes32 descriptionHash)
-        public
-        payable
-        virtual
-        returns (uint256)
-    {
+    function executeWithModule(
+        VotingModule module,
+        bytes memory proposalData,
+        bytes32 descriptionHash
+    ) public payable virtual returns (uint256) {
         uint256 proposalId = hashProposalWithModule(address(module), proposalData, descriptionHash);
 
         ProposalState status = state(proposalId);
@@ -741,8 +802,10 @@ contract AgoraGovernor is
 
         emit ProposalExecuted(proposalId);
 
-        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) =
-            module._formatExecuteParams(proposalId, proposalData);
+        (address[] memory targets, uint256[] memory values, bytes[] memory calldatas) = module._formatExecuteParams(
+            proposalId,
+            proposalData
+        );
 
         _beforeExecute(proposalId, targets, values, calldatas, descriptionHash);
         _execute(proposalId, targets, values, calldatas, descriptionHash);

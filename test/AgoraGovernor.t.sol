@@ -48,6 +48,8 @@ contract AgoraGovernorTest is Test {
         bytes[] calldatas,
         uint256 startBlock,
         uint256 endBlock,
+        uint256 startTimestamp,
+        uint256 endTimestamp,
         string description,
         uint8 proposalType
     );
@@ -58,6 +60,8 @@ contract AgoraGovernorTest is Test {
         bytes proposalData,
         uint256 startBlock,
         uint256 endBlock,
+        uint256 startTimestamp,
+        uint256 endTimestamp,
         string description,
         uint8 proposalType
     );
@@ -469,7 +473,7 @@ contract ProposeWithModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, _actor, address(module), proposalData, snapshot, deadline, description, _proposalType
+            proposalId, _actor, address(module), proposalData, snapshot, deadline, 0, 0, description, _proposalType
         );
         if (_proposalType > 0) {
             governor.proposeWithModule(VotingModule(module), proposalData, description, _proposalType);
@@ -499,7 +503,7 @@ contract ProposeWithModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, manager, address(module), proposalData, snapshot, deadline, description, _proposalType
+            proposalId, manager, address(module), proposalData, snapshot, deadline, 0, 0, description, _proposalType
         );
         if (_proposalType > 0) {
             governor.proposeWithModule(VotingModule(module), proposalData, description, _proposalType);
@@ -602,7 +606,7 @@ contract ProposeWithOptimisticModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, description, 2
+            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, 0, 0, description, 2
         );
         vm.prank(_actor);
         governor.proposeWithModule(optimisticModule, proposalData, description, 2);
@@ -625,7 +629,7 @@ contract ProposeWithOptimisticModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, description, 2
+            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, 0, 0, description, 2
         );
         vm.prank(_actor);
         governor.proposeWithModule(optimisticModule, proposalData, description, 2);
@@ -669,7 +673,7 @@ contract ProposeWithOptimisticModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, description, 2
+            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, 0, 0, description, 2
         );
         vm.prank(_actor);
         governor.proposeWithModule(optimisticModule, proposalData, description, 2);
@@ -752,7 +756,7 @@ contract ProposeWithOptimisticModule is AgoraGovernorTest {
 
         vm.expectEmit();
         emit ProposalCreated(
-            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, description, 2
+            proposalId, _actor, address(optimisticModule), proposalData, snapshot, deadline, 0, 0, description, 2
         );
         vm.prank(_actor);
         governor.proposeWithModule(optimisticModule, proposalData, description, 2);
